@@ -19,25 +19,23 @@
  *
  */
 
-/* global cordova, Windows, Media, MediaError, LocalFileSystem, halfSpeedBtn */
+/* global cordova, Media, MediaError, halfSpeedBtn */
 
 // increased timeout for actual playback to give device chance to download and play mp3 file
 // some emulators can be REALLY slow at this, so two minutes
 var ACTUAL_PLAYBACK_TEST_TIMEOUT = 2 * 60 * 1000;
+jasmine.DEFAULT_TIMEOUT_INTERVAL = ACTUAL_PLAYBACK_TEST_TIMEOUT;
 
 var WEB_MP3_FILE = 'https://cordova.apache.org/static/downloads/BlueZedEx.mp3';
 var WEB_MP3_STREAM = 'https://cordova.apache.org/static/downloads/BlueZedEx.mp3';
 
-var isWindows = cordova.platformId === 'windows';
 var isBrowser = cordova.platformId === 'browser';
 // Detect whether audio hardware is available and enabled. For iOS playing audio is
 // not supported on emulators w/out sound device connected to host PC but (which is
 // the case for Sauce Labs emulators - see CB-11430)
-var isAudioSupported = isWindows
-    ? !!Windows.Media.Devices.MediaDevice.getDefaultAudioRenderId(Windows.Media.Devices.AudioDeviceRole.default)
-    : cordova.platformId === 'ios'
-        ? !window.SAUCELABS_ENV
-        : true;
+var isAudioSupported = cordova.platformId === 'ios'
+    ? !window.SAUCELABS_ENV
+    : true;
 
 // Detect OS version when running on Android
 var androidVersion = null;
@@ -74,8 +72,8 @@ exports.defineAutoTests = function () {
                         compare: function (_, message) {
                             var pass = false;
                             return {
-                                pass: pass,
-                                message: message
+                                pass,
+                                message
                             };
                         }
                     };
@@ -231,17 +229,42 @@ exports.defineAutoTests = function () {
             badMedia.play();
         });
 
+        it("media.spec.19 MediaError instance should contain 'code' and 'message' fields", function (done) {
+            var context = this;
+            var fileName = 'invalid.file.name';
+            var badMedia = new Media(fileName, succeed.bind(null, done, ' badMedia = new Media , Unexpected succees callback, it should not create Media object with invalid file name'), function (result) {
+                if (context.done) return;
+                context.done = true;
+                expect(result).toBeDefined();
+                expect(result.code).toBeDefined();
+                expect(result.message).toBeDefined();
+                if (badMedia) {
+                    badMedia.release();
+                }
+                done();
+            });
+            badMedia.play();
+        });
+
         describe('actual playback', function () {
             var checkInterval, media;
 
-            afterEach(function () {
-                clearInterval(checkInterval);
+            // Ensure interval and media is cleared out before and after each test
+            var safeDone = function () {
+                if (checkInterval) {
+                    clearInterval(checkInterval);
+                    checkInterval = null;
+                }
+
                 if (media) {
                     media.stop();
                     media.release();
                     media = null;
                 }
-            });
+            };
+
+            afterEach(function () { safeDone(); });
+            beforeEach(function () { safeDone(); });
 
             it(
                 'media.spec.19 position should be set properly',
@@ -256,7 +279,9 @@ exports.defineAutoTests = function () {
                     // Some information about this kind of behaviour can be found at JIRA: CB-7099.
                     var context = this;
                     var mediaFile = WEB_MP3_FILE;
-                    var successCallback = function () {};
+                    var successCallback = function () {
+                        done();
+                    };
                     var statusChange = function (statusCode) {
                         if (!context.done && statusCode === Media.MEDIA_RUNNING) {
                             checkInterval = setInterval(function () {
@@ -294,7 +319,9 @@ exports.defineAutoTests = function () {
                     // Some information about this kind of behaviour can be found at JIRA: CB-7099.
                     var context = this;
                     var mediaFile = WEB_MP3_FILE;
-                    var successCallback = function () {};
+                    var successCallback = function () {
+                        done();
+                    };
                     var statusChange = function (statusCode) {
                         if (!context.done && statusCode === Media.MEDIA_RUNNING) {
                             checkInterval = setInterval(function () {
@@ -347,7 +374,9 @@ exports.defineAutoTests = function () {
                     var context = this;
                     var resumed = false;
                     var mediaFile = WEB_MP3_FILE;
-                    var successCallback = function () {};
+                    var successCallback = function () {
+                        done();
+                    };
                     var statusChange = function (statusCode) {
                         if (context.done) return;
 
@@ -412,12 +441,15 @@ exports.defineAutoTests = function () {
                     // Some information about this kind of behaviour can be found at JIRA: CB-7099.
                     var context = this;
                     var mediaFile = WEB_MP3_FILE;
-                    var successCallback = function () {};
+                    var successCallback = function () {
+                        done();
+                    };
                     var statusChange = function (statusCode) {
                         if (!context.done && statusCode === Media.MEDIA_RUNNING) {
                             checkInterval = setInterval(function () {
                                 if (context.done) return;
                                 media.seekTo(5000);
+                                media.pause(); // pause media before confirming if it seeked to 5 seconds against current position.
                                 media.getCurrentPosition(function (position) {
                                     expect(position).toBeCloseTo(5, 0);
                                     context.done = true;
@@ -915,27 +947,6 @@ exports.defineManualTests = function (contentEl, createActionButton) {
         );
     }
 
-    // Function to create a file for Windows recording
-    function getRecordSrcWin () {
-        var fsFail = function (error) {
-            console.log('error creating file for Win recording', error);
-        };
-        var gotFile = function (file) {
-            recordSrc = file.name;
-        };
-        var gotFS = function (fileSystem) {
-            fileSystem.root.getFile(
-                'WinRecording.m4a',
-                {
-                    create: true
-                },
-                gotFile,
-                fsFail
-            );
-        };
-        window.requestFileSystem(LocalFileSystem.PERSISTENT, 0, gotFS, fsFail);
-    }
-
     // Generate Dynamic Table
     function generateTable (tableId, rows, cells, elements) {
         var table = document.createElement('table');
@@ -1239,8 +1250,6 @@ exports.defineManualTests = function (contentEl, createActionButton) {
     // get Special path to record if iOS
     if (cordova.platformId === 'ios') {
         getRecordSrc();
-    } else if (cordova.platformId === 'windows') {
-        getRecordSrcWin();
     }
 
     // testing process and details
